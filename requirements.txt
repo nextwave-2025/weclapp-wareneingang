@@ -1,0 +1,2 @@
+# Keine externen Pakete nötig - nur Python Standardbibliothek
+# Railway erkennt Python automatisch
