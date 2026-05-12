@@ -376,6 +376,8 @@ class Handler(BaseHTTPRequestHandler):
             self._set_session()
         elif self.path.startswith("/send_email"):
             self._send_email()
+        elif self.path.startswith("/webhook"):
+            self._handle_webhook()
         elif self.path.startswith("/copy_sn"):
             self._copy_sn()
         elif self.path.startswith("/debug_ig"):
@@ -389,7 +391,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path.startswith("/proxy"):
+        if self.path.startswith("/webhook"):
+            self._handle_webhook()
+        elif self.path.startswith("/proxy"):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length) if length else None
             self._proxy("POST", body)
@@ -545,6 +549,75 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(result).encode())
 
+    def _handle_webhook(self):
+        """weclapp Webhook - wird aufgerufen wenn Wareneingang ins Lager gebucht wird"""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b""
+            data = json.loads(body) if body else {}
+            print(f"  Webhook empfangen: {json.dumps(data)[:200]}")
+
+            # Prüfe ob es ein incomingGoods FINISHED Event ist
+            entity_type = data.get("entityType", "")
+            event_type = data.get("eventType", "")
+            entity = data.get("entity", {})
+
+            if "incomingGoods" in entity_type.lower() and entity.get("status") in ["FINISHED", "BOOKED", "POSTED"]:
+                incoming_num = entity.get("incomingGoodsNumber", "")
+                purchase_order_num = entity.get("purchaseOrderNumber", "")
+                warehouse = entity.get("warehouseName", "Hauptlager")
+
+                # E-Mail an Werkstudenten
+                STUDENT_EMAIL = os.environ.get("STUDENT_EMAIL", "")
+                if STUDENT_EMAIL:
+                    subject = f"✅ Wareneingang {incoming_num} wurde ins Lager gebucht!"
+                    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
+  <div style="background:#28a745;padding:20px;border-radius:8px 8px 0 0">
+    <h2 style="color:white;margin:0">✅ Ware eingebucht!</h2>
+  </div>
+  <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:8px;color:#666;width:160px">Wareneingang</td><td style="padding:8px;font-weight:bold">#{incoming_num}</td></tr>
+      <tr><td style="padding:8px;color:#666">Bestellung</td><td style="padding:8px">{purchase_order_num}</td></tr>
+      <tr><td style="padding:8px;color:#666">Lager</td><td style="padding:8px">{warehouse}</td></tr>
+    </table>
+    <p style="color:#555;margin-top:16px">Die Ware wurde erfolgreich ins Lager gebucht. Der Vorgang ist abgeschlossen.</p>
+    <p style="color:#999;font-size:12px;text-align:center;margin-top:24px">Wareneingang App · NEXTWAVE GmbH</p>
+  </div>
+</body></html>"""
+                    self._send_email_direct(STUDENT_EMAIL, subject, html)
+                    print(f"  Benachrichtigung an Werkstudenten gesendet: {STUDENT_EMAIL}")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"received": True}).encode())
+        except Exception as e:
+            print(f"  Webhook Fehler: {e}")
+            self.send_response(500)
+            self.end_headers()
+
+    def _send_email_direct(self, to_email, subject, html_body):
+        """Sendet E-Mail via SendGrid"""
+        SENDGRID_KEY = os.environ.get("SENDGRID_API_KEY", "")
+        if not SENDGRID_KEY:
+            return
+        payload = json.dumps({
+            "personalizations": [{"to": [{"email": to_email}]}],
+            "from": {"email": EMAIL_FROM},
+            "subject": subject,
+            "content": [{"type": "text/html", "value": html_body}]
+        }).encode("utf-8")
+        req = urllib.request.Request("https://api.sendgrid.com/v3/mail/send", data=payload, method="POST")
+        req.add_header("Authorization", f"Bearer {SENDGRID_KEY}")
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req) as r:
+                print(f"  E-Mail an {to_email} gesendet: {r.status}")
+        except Exception as e:
+            print(f"  E-Mail Fehler: {e}")
+
     def _set_email_pass(self):
         from urllib.parse import urlparse, parse_qs
         global EMAIL_PASS
@@ -583,7 +656,24 @@ class Handler(BaseHTTPRequestHandler):
             for s in sn_list.split("\n") if s.strip()
         ])
 
-        html_body = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+        # JavaScript für Alles-Kopieren Button
+        copy_script = """
+        <script>
+        function copyAllSN() {
+            var sns = document.getElementById('all-sns').innerText;
+            navigator.clipboard.writeText(sns).then(function() {
+                var btn = document.getElementById('copy-btn');
+                btn.innerText = '✅ Kopiert!';
+                btn.style.background = '#28a745';
+                setTimeout(function(){ 
+                    btn.innerText = '📋 Alle S/N kopieren';
+                    btn.style.background = '#185FA5';
+                }, 2000);
+            });
+        }
+        </script>"""
+
+        html_body = f"""<html><head>{copy_script}</head><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#185FA5;padding:20px;border-radius:8px 8px 0 0">
     <h2 style="color:white;margin:0">&#128230; Wareneingang erfasst</h2>
   </div>
@@ -594,10 +684,19 @@ class Handler(BaseHTTPRequestHandler):
       <tr><td style="padding:8px;color:#666">Wareneingang</td><td style="padding:8px">#{incoming_id}</td></tr>
     </table>
     <div style="margin-bottom:20px">
-      <p style="font-weight:bold;color:#333;margin-bottom:8px">&#128196; Seriennummern (einzeln kopieren &amp; in weclapp eingeben):</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <p style="font-weight:bold;color:#333;margin:0">&#128196; Seriennummern:</p>
+        <button id="copy-btn" onclick="copyAllSN()" 
+                style="background:#185FA5;color:white;border:none;padding:8px 16px;border-radius:6px;
+                       font-size:13px;cursor:pointer;font-weight:bold">
+          &#128203; Alle S/N kopieren
+        </button>
+      </div>
       {sn_lines}
-      <div style="background:#eef6ff;border:1px dashed #185FA5;border-radius:4px;padding:8px 12px;margin-top:8px;font-family:monospace;font-size:13px;color:#555;white-space:pre-line">{sn_list}</div>
-      <p style="font-size:11px;color:#999;margin-top:4px">&#8593; Alles zusammen zum Kopieren</p>
+      <pre id="all-sns" style="background:#eef6ff;border:1px dashed #185FA5;border-radius:4px;
+                                padding:10px 14px;margin-top:8px;font-family:monospace;font-size:14px;
+                                color:#0C447C;white-space:pre;line-height:1.8">{sn_list}</pre>
+      <p style="font-size:11px;color:#999;margin-top:4px">&#8593; Oder oben auf "Alle S/N kopieren" klicken → direkt in S/N App einfügen (Strg+V)</p>
     </div>
     <div style="text-align:center;margin:24px 0">
       <a href="{weclapp_url}" style="background:#28a745;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold;display:inline-block">
