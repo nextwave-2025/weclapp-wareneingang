@@ -335,22 +335,18 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen - direkt aus receiptItems da wir die articleId haben
+      // Artikelnamen direkt aus igDetail.incomingGoodsItems
       const articleNameParts = [];
-      for (const ri of receiptItems) {
-        // articleId aus selectedOrder._items holen
-        const matchItem = (selectedOrder._items || []).find(i => i.id === ri.purchaseOrderItemId);
-        const artId = matchItem ? matchItem.articleId : null;
-        if (artId) {
+      for (const igItem of (igDetail.incomingGoodsItems || [])) {
+        if (igItem.articleId) {
           try {
-            const art = await api(`article/id/${artId}`);
-            const n = art.name || art.description || '';
+            const art = await api(`article/id/${igItem.articleId}`);
+            const n = art.name || art.description || igItem.articleNumber || '';
             if (n) articleNameParts.push(n);
-          } catch(e) {}
+          } catch(e) { if (igItem.articleNumber) articleNameParts.push(igItem.articleNumber); }
         }
       }
-      const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') :
-        (selectedOrder._items || []).map(i => i.articleNumber || '').filter(Boolean).join(', ');
+      const articleNames = articleNameParts.join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
