@@ -651,6 +651,8 @@ class Handler(BaseHTTPRequestHandler):
 
                     # Artikel via API holen - name Feld = unsere Bezeichnung
                     items = entity.get("incomingGoodsItems", [])
+                    total_qty = sum(float(i.get("quantity", 0)) for i in items)
+                    total_qty = int(total_qty) if total_qty == int(total_qty) else total_qty
                     article_names = []
                     for ig_item in items:
                         art_id = ig_item.get("articleId", "")
@@ -686,6 +688,7 @@ class Handler(BaseHTTPRequestHandler):
       <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Bestellung</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">{purchase_order_num}</td></tr>
       <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Lieferant</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{supplier_display}</td></tr>
       <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Artikel</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{article_list}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Menge</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">{total_qty} Stk.</td></tr>
       <tr><td style="padding:10px 8px;color:#666">Lager</td><td style="padding:10px 8px">{warehouse}</td></tr>
     </table>
     <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:12px 16px;margin-bottom:16px">
