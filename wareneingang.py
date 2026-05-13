@@ -249,7 +249,8 @@ async function selectOrder(order) {
       try {
         const art = await api(`article/id/${item.articleId}`);
         desc = art.name || art.description || desc;
-        } catch(e) { console.log('Artikel laden Fehler:', e.message); }
+        item._articleName = desc;
+      } catch(e) {}
       const tr=document.createElement('tr');
       tr.innerHTML=`<td><div style="font-weight:600">${artNr}</div><div style="font-size:12px;color:#555;margin-top:2px;font-weight:500">${desc}</div></td><td style="text-align:center;font-weight:600;color:#185FA5">${out}</td><td><div class="sn-row"><input class="sn-input" id="sn-inp-${item.id}" placeholder="Seriennummer (Enter oder mehrere einfügen)" 
   onkeydown="if(event.key==='Enter'){event.preventDefault();addSN('${item.id}',${out})}"
@@ -328,7 +329,12 @@ async function bookGoodsReceipt(){
       const orderNum = selectedOrder.purchaseOrderNumber || selectedOrder.id;
       const supplierName = selectedOrder._supplierName || selectedOrder.supplierNumber || '';
       const snList = receiptItems.flatMap(i => i.serialNumbers.map(sn => typeof sn === 'string' ? sn : sn.serialNumber)).join('\n');
-      await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}`);
+      // Artikelnamen sammeln
+      const articleNames = receiptItems.map(i => {
+        const item = (selectedOrder._items || []).find(it => it.id === i.purchaseOrderItemId);
+        return item ? (item._articleName || item.title || item.articleNumber || '') : '';
+      }).filter(Boolean).join(', ');
+      await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
     }
@@ -636,6 +642,7 @@ class Handler(BaseHTTPRequestHandler):
         incoming_id       = qs.get("incomingId",       [""])[0]
         purchase_order_id = qs.get("purchaseOrderId", [""])[0]
         order_num         = qs.get("orderNum",         [""])[0]
+        articles          = qs.get("articles",         [""])[0]
         supplier    = qs.get("supplier",   [""])[0]
         sns         = qs.get("sns",        [""])[0]
 
@@ -673,6 +680,9 @@ class Handler(BaseHTTPRequestHandler):
         }
         </script>"""
 
+        # S/N als URL-encoded für mailto Link (Desktop Fallback)
+        sn_mailto = "%0A".join(sn_list.split("\n"))  # %0A = Zeilenumbruch in URL
+
         html_body = f"""<html><head>{copy_script}</head><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#185FA5;padding:20px;border-radius:8px 8px 0 0">
     <h2 style="color:white;margin:0">&#128230; Wareneingang erfasst</h2>
@@ -681,22 +691,30 @@ class Handler(BaseHTTPRequestHandler):
     <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
       <tr><td style="padding:8px;color:#666;width:140px">Bestellung</td><td style="padding:8px;font-weight:bold">{order_num}</td></tr>
       <tr><td style="padding:8px;color:#666">Lieferant</td><td style="padding:8px">{supplier}</td></tr>
+      <tr><td style="padding:8px;color:#666">Artikel</td><td style="padding:8px;font-weight:500">{articles}</td></tr>
       <tr><td style="padding:8px;color:#666">Wareneingang</td><td style="padding:8px">#{incoming_id}</td></tr>
     </table>
     <div style="margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <p style="font-weight:bold;color:#333;margin:0">&#128196; Seriennummern:</p>
-        <button id="copy-btn" onclick="copyAllSN()" 
-                style="background:#185FA5;color:white;border:none;padding:8px 16px;border-radius:6px;
-                       font-size:13px;cursor:pointer;font-weight:bold">
-          &#128203; Alle S/N kopieren
-        </button>
+        <span>
+          <!-- Mobile: JavaScript Button -->
+          <button id="copy-btn" onclick="copyAllSN()" 
+                  style="background:#185FA5;color:white;border:none;padding:8px 14px;border-radius:6px;
+                         font-size:12px;cursor:pointer;font-weight:bold">
+            &#128203; Alle S/N kopieren
+          </button>
+        </span>
       </div>
       {sn_lines}
-      <pre id="all-sns" style="background:#eef6ff;border:1px dashed #185FA5;border-radius:4px;
-                                padding:10px 14px;margin-top:8px;font-family:monospace;font-size:14px;
-                                color:#0C447C;white-space:pre;line-height:1.8">{sn_list}</pre>
-      <p style="font-size:11px;color:#999;margin-top:4px">&#8593; Oder oben auf "Alle S/N kopieren" klicken → direkt in S/N App einfügen (Strg+V)</p>
+      <pre id="all-sns" style="background:#eef6ff;border:2px solid #185FA5;border-radius:4px;
+                                padding:12px 16px;margin-top:8px;font-family:monospace;font-size:15px;
+                                color:#0C447C;white-space:pre;line-height:2.0;
+                                user-select:all;-webkit-user-select:all">{sn_list}</pre>
+      <p style="font-size:11px;color:#555;margin-top:6px;background:#fff3cd;padding:6px 10px;border-radius:4px;border-left:3px solid #ffc107">
+        &#128161; <strong>Desktop:</strong> Klicke in den blauen S/N-Block oben → Strg+A → Strg+C &nbsp;|&nbsp;
+        <strong>Handy:</strong> "Alle S/N kopieren" Button
+      </p>
     </div>
     <div style="text-align:center;margin:24px 0">
       <a href="{weclapp_url}" style="background:#28a745;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold;display:inline-block">
