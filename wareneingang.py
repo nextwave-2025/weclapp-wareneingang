@@ -329,11 +329,12 @@ async function bookGoodsReceipt(){
       const orderNum = selectedOrder.purchaseOrderNumber || selectedOrder.id;
       const supplierName = selectedOrder._supplierName || selectedOrder.supplierNumber || '';
       const snList = receiptItems.flatMap(i => i.serialNumbers.map(sn => typeof sn === 'string' ? sn : sn.serialNumber)).join('\n');
-      // Artikelnamen sammeln
-      const articleNames = receiptItems.map(i => {
-        const item = (selectedOrder._items || []).find(it => it.id === i.purchaseOrderItemId);
-        return item ? (item._articleName || item.title || item.articleNumber || '') : '';
-      }).filter(Boolean).join(', ');
+      // Artikelnamen direkt aus _items holen
+      const articleNames = (selectedOrder._items || [])
+        .filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)
+        .map(i => i._articleName || i.description || i.title || i.articleNumber || '')
+        .filter(Boolean)
+        .join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -651,29 +652,18 @@ class Handler(BaseHTTPRequestHandler):
 
         # S/N untereinander formatieren
         sn_list = sns.replace(" | ", "\n").replace(", ", "\n").replace(",", "\n")
-        sn_lines = "\n".join([
-            f"""<div onclick="navigator.clipboard.writeText('{s.strip()}')" 
-                style="background:#fff;border:1px solid #d0e8ff;border-radius:4px;padding:8px 14px;margin:4px 0;
-                       font-family:monospace;font-size:16px;color:#0C447C;cursor:pointer;
-                       display:flex;justify-content:space-between;align-items:center"
-                title="Klicken zum Kopieren">
-                <span>{s.strip()}</span>
-                <span style="font-size:11px;color:#999;margin-left:12px">&#128203; kopieren</span>
-            </div>"""
-            for s in sn_list.split("\n") if s.strip()
-        ])
+        # sn_lines nicht mehr benötigt
 
-        # JavaScript für Alles-Kopieren Button
-        copy_script = """
-        <script>
+        copy_script = """<script>
         function copyAllSN() {
-            var sns = document.getElementById('all-sns').innerText;
-            navigator.clipboard.writeText(sns).then(function() {
+            var el = document.getElementById('all-sns');
+            var txt = el.innerText || el.textContent;
+            navigator.clipboard.writeText(txt).then(function() {
                 var btn = document.getElementById('copy-btn');
-                btn.innerText = '✅ Kopiert!';
+                btn.innerText = '\u2705 Kopiert!';
                 btn.style.background = '#28a745';
                 setTimeout(function(){ 
-                    btn.innerText = '📋 Alle S/N kopieren';
+                    btn.innerText = '\U0001f4cb Alle S/N kopieren';
                     btn.style.background = '#185FA5';
                 }, 2000);
             });
@@ -706,7 +696,6 @@ class Handler(BaseHTTPRequestHandler):
           </button>
         </span>
       </div>
-      {sn_lines}
       <pre id="all-sns" style="background:#eef6ff;border:2px solid #185FA5;border-radius:4px;
                                 padding:12px 16px;margin-top:8px;font-family:monospace;font-size:15px;
                                 color:#0C447C;white-space:pre;line-height:2.0;
