@@ -334,18 +334,21 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen direkt via API beim Buchen holen (sicherste Methode)
+      // Artikelnamen via API - alle items mit S/N
       const articleNameParts = [];
-      for (const item of items.filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)) {
+      for (const item of items) {
+        const hasSN = serialNumbers[item.id] && serialNumbers[item.id].length > 0;
+        if (!hasSN) continue;
         if (item.articleId) {
           try {
             const art = await api(`article/id/${item.articleId}`);
-            const n = art.name || art.description || item.articleNumber || '';
+            const n = art.name || art.description || '';
             if (n) articleNameParts.push(n);
-          } catch(e) { if (item.articleNumber) articleNameParts.push(item.articleNumber); }
+          } catch(e) {}
         }
       }
-      const articleNames = articleNameParts.join(', ');
+      const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') : 
+        items.map(i => i.articleNumber || '').filter(Boolean).join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -658,20 +661,22 @@ class Handler(BaseHTTPRequestHandler):
                             sn_list_webhook.append(bs.get("serialNumber",""))
 
                     subject = f"✅ Wareneingang {incoming_num} – Ware ist im Lager!"
-                    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
+                    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#28a745;padding:20px;border-radius:8px 8px 0 0">
     <h2 style="color:white;margin:0">✅ Ware erfolgreich eingebucht!</h2>
   </div>
   <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-      <tr><td style="padding:8px;color:#666;width:160px">Wareneingang</td><td style="padding:8px;font-weight:bold">#{incoming_num}</td></tr>
-      <tr><td style="padding:8px;color:#666">Bestellung</td><td style="padding:8px;font-weight:bold">{purchase_order_num}</td></tr>
-      <tr><td style="padding:8px;color:#666">Lieferant</td><td style="padding:8px">{supplier_display}</td></tr>
-      <tr><td style="padding:8px;color:#666">Artikel</td><td style="padding:8px">{article_list}</td></tr>
-      <tr><td style="padding:8px;color:#666">Lager</td><td style="padding:8px">{warehouse}</td></tr>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+      <tr><td style="padding:10px 8px;color:#666;width:160px;border-bottom:1px solid #eee">Wareneingang</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">#{incoming_num}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Bestellung</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">{purchase_order_num}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Lieferant</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{supplier_display}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Artikel</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{article_list}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666">Lager</td><td style="padding:10px 8px">{warehouse}</td></tr>
     </table>
-    <p style="color:#28a745;font-weight:bold;font-size:15px;margin:0">Der Vorgang ist vollständig abgeschlossen. ✅</p>
-    <p style="color:#999;font-size:12px;text-align:center;margin-top:24px">Wareneingang App · NEXTWAVE GmbH</p>
+    <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:12px 16px;margin-bottom:16px">
+      <p style="color:#155724;font-weight:bold;font-size:15px;margin:0">✅ Der Vorgang ist vollständig abgeschlossen.</p>
+    </div>
+    <p style="color:#999;font-size:12px;text-align:center;margin-top:16px">Wareneingang App · NEXTWAVE GmbH</p>
   </div>
 </body></html>"""
                     self._send_email_direct(STUDENT_EMAIL, subject, html)
