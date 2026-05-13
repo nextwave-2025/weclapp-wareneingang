@@ -334,12 +334,18 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen direkt aus items - wurde beim Laden via article API gesetzt
-      const articleNames = items
-        .filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)
-        .map(i => i._articleName || i.articleNumber || '')
-        .filter(Boolean)
-        .join(', ');
+      // Artikelnamen direkt via API beim Buchen holen (sicherste Methode)
+      const articleNameParts = [];
+      for (const item of items.filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)) {
+        if (item.articleId) {
+          try {
+            const art = await api(`article/id/${item.articleId}`);
+            const n = art.name || art.description || item.articleNumber || '';
+            if (n) articleNameParts.push(n);
+          } catch(e) { if (item.articleNumber) articleNameParts.push(item.articleNumber); }
+        }
+      }
+      const articleNames = articleNameParts.join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -625,9 +631,27 @@ class Handler(BaseHTTPRequestHandler):
                                 supplier_display = s_json.get("company", s_json.get("name", ""))
                         except: pass
 
-                    # Artikel aus incomingGoodsItems
+                    # Artikel via API holen - name Feld = unsere Bezeichnung
                     items = entity.get("incomingGoodsItems", [])
-                    article_list = ", ".join([i.get("articleNumber","") + " " + i.get("title","") for i in items if i.get("articleNumber")])
+                    article_names = []
+                    for ig_item in items:
+                        art_id = ig_item.get("articleId", "")
+                        if art_id:
+                            try:
+                                art_url = f"https://{TENANT}/webapp/api/v1/article/id/{art_id}"
+                                art_req = urllib.request.Request(art_url)
+                                art_req.add_header("AuthenticationToken", API_KEY)
+                                art_req.add_header("Accept", "application/json")
+                                with urllib.request.urlopen(art_req) as ar:
+                                    art_data = ar.read()
+                                    if ar.headers.get("Content-Encoding") == "gzip":
+                                        art_data = gzip.decompress(art_data)
+                                    art_json = json.loads(art_data)
+                                    art_name = art_json.get("name", "")
+                                    if art_name:
+                                        article_names.append(art_name)
+                            except: pass
+                    article_list = ", ".join(article_names)
                     sn_list_webhook = []
                     for i in items:
                         for bs in i.get("batchSerialNumbers", []):
