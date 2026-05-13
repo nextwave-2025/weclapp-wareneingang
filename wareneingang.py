@@ -334,8 +334,11 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen aus _items holen - mit API Fallback
-      const relevantItems = (selectedOrder._items || []).filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0);
+      // Artikelnamen aus _items holen - serialNumbers Key ist item.id
+      const relevantItems = (selectedOrder._items || []).filter(i => 
+        (serialNumbers[i.id] && serialNumbers[i.id].length > 0) ||
+        (serialNumbers[i.purchaseOrderItemId] && serialNumbers[i.purchaseOrderItemId].length > 0)
+      );
       const articleNameParts = [];
       for (const item of relevantItems) {
         let name = item._articleName || '';
