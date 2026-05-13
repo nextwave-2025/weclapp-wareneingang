@@ -328,13 +328,19 @@ async function bookGoodsReceipt(){
       // E-Mail mit Link senden
       const orderNum = selectedOrder.purchaseOrderNumber || selectedOrder.id;
       const supplierName = selectedOrder._supplierName || selectedOrder.supplierNumber || '';
-      const snList = receiptItems.flatMap(i => i.serialNumbers.map(sn => typeof sn === 'string' ? sn : sn.serialNumber)).join('\n');
-      // Artikelnamen direkt aus _items holen
+      // S/N direkt aus serialNumbers Dictionary holen (sind Strings)
+      const allSNs = [];
+      receiptItems.forEach(i => {
+        (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
+      });
+      const snList = allSNs.join('\n');
+      // Artikelnamen aus _items holen
       const articleNames = (selectedOrder._items || [])
         .filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)
-        .map(i => i._articleName || i.description || i.title || i.articleNumber || '')
+        .map(i => i._articleName || i.articleNumber || '')
         .filter(Boolean)
         .join(', ');
+      console.log('articleNames:', articleNames, 'items:', JSON.stringify((selectedOrder._items||[]).map(i=>({id:i.id,name:i._articleName,artNr:i.articleNumber}))));
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -562,14 +568,17 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length) if length else b""
             data = json.loads(body) if body else {}
-            print(f"  Webhook empfangen: {json.dumps(data)[:200]}")
+            print(f"  Webhook empfangen: {json.dumps(data)[:500]}")
 
-            # Prüfe ob es ein incomingGoods FINISHED Event ist
-            entity_type = data.get("entityType", "")
-            event_type = data.get("eventType", "")
-            entity = data.get("entity", {})
+            # Prüfe ob es ein incomingGoods Event ist - alle Status-Wechsel
+            entity_type = data.get("entityType", data.get("entity_type", ""))
+            event_type = data.get("eventType", data.get("event_type", ""))
+            entity = data.get("entity", data.get("payload", data))
+            status = entity.get("status", "")
+            print(f"  entityType={entity_type} eventType={event_type} status={status}")
 
-            if "incomingGoods" in entity_type.lower() and entity.get("status") in ["FINISHED", "BOOKED", "POSTED"]:
+            if "incoming" in entity_type.lower() or "incomingGoods" in str(data):
+                if status in ["FINISHED", "BOOKED", "POSTED", "COMPLETED"] or True:  # Immer senden zum Testen
                 incoming_num = entity.get("incomingGoodsNumber", "")
                 purchase_order_num = entity.get("purchaseOrderNumber", "")
                 warehouse = entity.get("warehouseName", "Hauptlager")
