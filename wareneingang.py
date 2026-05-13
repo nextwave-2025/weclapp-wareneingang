@@ -584,7 +584,29 @@ class Handler(BaseHTTPRequestHandler):
             status = entity.get("status", "")
             print(f"  entityType={entity_type} eventType={event_type} status={status}")
 
-            if ("incoming" in entity_type.lower() or "incomingGoods" in str(data)) and status == "FINISHED":
+            # weclapp sendet: {"entityId": "...", "entityName": "incomingGoods", "type": "UPDATE"}
+            entity_id = data.get("entityId", "")
+            entity_name = data.get("entityName", entity_type)
+
+            if "incomingGoods" in entity_name and entity_id:
+                # Status direkt via API abrufen
+                try:
+                    ig_url = f"https://{TENANT}/webapp/api/v1/incomingGoods/id/{entity_id}"
+                    ig_req = urllib.request.Request(ig_url)
+                    ig_req.add_header("AuthenticationToken", API_KEY)
+                    ig_req.add_header("Accept", "application/json")
+                    with urllib.request.urlopen(ig_req) as ig_r:
+                        ig_data = ig_r.read()
+                        if ig_r.headers.get("Content-Encoding") == "gzip":
+                            ig_data = gzip.decompress(ig_data)
+                        entity = json.loads(ig_data)
+                    status = entity.get("status", "")
+                    print(f"  incomingGoods {entity_id} Status: {status}")
+                except Exception as e:
+                    print(f"  API Fehler: {e}")
+                    status = ""
+
+            if "incomingGoods" in entity_name and status == "FINISHED":
                 incoming_num = entity.get("incomingGoodsNumber", "")
                 purchase_order_num = entity.get("purchaseOrderNumber", "")
                 warehouse = entity.get("warehouseName", "Hauptlager")
