@@ -27,6 +27,7 @@ EMAIL_USER = os.environ.get("EMAIL_USER", "nextwavegmbh@gmail.com")
 EMAIL_PASS = os.environ.get("EMAIL_PASS", "ljfgxikfgfqppbmf")
 
 JSESSIONID = os.environ.get("JSESSIONID", "")
+LAST_WEBHOOK_ID = ""  # Verhindert doppelte E-Mails
 
 HTML = r"""<!DOCTYPE html>
 <html lang="de">
@@ -334,21 +335,22 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen via API - alle items mit S/N
+      // Artikelnamen - direkt aus receiptItems da wir die articleId haben
       const articleNameParts = [];
-      for (const item of items) {
-        const hasSN = serialNumbers[item.id] && serialNumbers[item.id].length > 0;
-        if (!hasSN) continue;
-        if (item.articleId) {
+      for (const ri of receiptItems) {
+        // articleId aus selectedOrder._items holen
+        const matchItem = (selectedOrder._items || []).find(i => i.id === ri.purchaseOrderItemId);
+        const artId = matchItem ? matchItem.articleId : null;
+        if (artId) {
           try {
-            const art = await api(`article/id/${item.articleId}`);
+            const art = await api(`article/id/${artId}`);
             const n = art.name || art.description || '';
             if (n) articleNameParts.push(n);
           } catch(e) {}
         }
       }
-      const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') : 
-        items.map(i => i.articleNumber || '').filter(Boolean).join(', ');
+      const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') :
+        (selectedOrder._items || []).map(i => i.articleNumber || '').filter(Boolean).join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -606,6 +608,18 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"  API Fehler: {e}")
                     status = ""
+
+            global LAST_WEBHOOK_ID
+            webhook_key = f"{entity_id}_{status}"
+            if webhook_key == LAST_WEBHOOK_ID:
+                print(f"  Duplikat ignoriert: {webhook_key}")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"received": True, "duplicate": True}).encode())
+                return
+            LAST_WEBHOOK_ID = webhook_key
 
             if "incomingGoods" in entity_name and status == "INCOMING_MOVED_INTO_STORE":
                 incoming_num = entity.get("incomingGoodsNumber", "")
