@@ -578,7 +578,6 @@ class Handler(BaseHTTPRequestHandler):
             print(f"  entityType={entity_type} eventType={event_type} status={status}")
 
             if "incoming" in entity_type.lower() or "incomingGoods" in str(data):
-                if status in ["FINISHED", "BOOKED", "POSTED", "COMPLETED"] or True:  # Immer senden zum Testen
                 incoming_num = entity.get("incomingGoodsNumber", "")
                 purchase_order_num = entity.get("purchaseOrderNumber", "")
                 warehouse = entity.get("warehouseName", "Hauptlager")
