@@ -249,7 +249,7 @@ async function selectOrder(order) {
       try {
         const art = await api(`article/id/${item.articleId}`);
         desc = art.name || art.description || desc;
-        item._articleName = desc;
+        item._articleName = desc;  // Für E-Mail
       } catch(e) {}
       const tr=document.createElement('tr');
       tr.innerHTML=`<td><div style="font-weight:600">${artNr}</div><div style="font-size:12px;color:#555;margin-top:2px;font-weight:500">${desc}</div></td><td style="text-align:center;font-weight:600;color:#185FA5">${out}</td><td><div class="sn-row"><input class="sn-input" id="sn-inp-${item.id}" placeholder="Seriennummer (Enter oder mehrere einfügen)" 
@@ -334,13 +334,20 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen aus _items holen
-      const articleNames = (selectedOrder._items || [])
-        .filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)
-        .map(i => i._articleName || i.articleNumber || '')
-        .filter(Boolean)
-        .join(', ');
-      console.log('articleNames:', articleNames, 'items:', JSON.stringify((selectedOrder._items||[]).map(i=>({id:i.id,name:i._articleName,artNr:i.articleNumber}))));
+      // Artikelnamen aus _items holen - mit API Fallback
+      const relevantItems = (selectedOrder._items || []).filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0);
+      const articleNameParts = [];
+      for (const item of relevantItems) {
+        let name = item._articleName || '';
+        if (!name && item.articleId) {
+          try {
+            const art = await api(`article/id/${item.articleId}`);
+            name = art.name || art.description || item.articleNumber || '';
+          } catch(e) { name = item.articleNumber || ''; }
+        }
+        if (name) articleNameParts.push(name);
+      }
+      const articleNames = articleNameParts.join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -577,7 +584,7 @@ class Handler(BaseHTTPRequestHandler):
             status = entity.get("status", "")
             print(f"  entityType={entity_type} eventType={event_type} status={status}")
 
-            if "incoming" in entity_type.lower() or "incomingGoods" in str(data):
+            if ("incoming" in entity_type.lower() or "incomingGoods" in str(data)) and status == "FINISHED":
                 incoming_num = entity.get("incomingGoodsNumber", "")
                 purchase_order_num = entity.get("purchaseOrderNumber", "")
                 warehouse = entity.get("warehouseName", "Hauptlager")
@@ -585,18 +592,47 @@ class Handler(BaseHTTPRequestHandler):
                 # E-Mail an Werkstudenten
                 STUDENT_EMAIL = os.environ.get("STUDENT_EMAIL", "")
                 if STUDENT_EMAIL:
-                    subject = f"✅ Wareneingang {incoming_num} wurde ins Lager gebucht!"
+                    # Zusätzliche Details aus Entity holen
+                    supplier_name = entity.get("senderSupplierNumber", "")
+                    # Lieferantenname via API holen
+                    sender_id = entity.get("senderPartyId", "")
+                    supplier_display = ""
+                    if sender_id:
+                        try:
+                            s_url = f"https://{TENANT}/webapp/api/v1/supplier/id/{sender_id}"
+                            s_req = urllib.request.Request(s_url)
+                            s_req.add_header("AuthenticationToken", API_KEY)
+                            s_req.add_header("Accept", "application/json")
+                            with urllib.request.urlopen(s_req) as sr:
+                                s_data = sr.read()
+                                if sr.headers.get("Content-Encoding") == "gzip":
+                                    s_data = gzip.decompress(s_data)
+                                s_json = json.loads(s_data)
+                                supplier_display = s_json.get("company", s_json.get("name", ""))
+                        except: pass
+
+                    # Artikel aus incomingGoodsItems
+                    items = entity.get("incomingGoodsItems", [])
+                    article_list = ", ".join([i.get("articleNumber","") + " " + i.get("title","") for i in items if i.get("articleNumber")])
+                    sn_list_webhook = []
+                    for i in items:
+                        for bs in i.get("batchSerialNumbers", []):
+                            sn_list_webhook.append(bs.get("serialNumber",""))
+
+                    subject = f"✅ Wareneingang {incoming_num} – Ware ist im Lager!"
                     html = f"""<html><body style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
   <div style="background:#28a745;padding:20px;border-radius:8px 8px 0 0">
-    <h2 style="color:white;margin:0">✅ Ware eingebucht!</h2>
+    <h2 style="color:white;margin:0">✅ Ware erfolgreich eingebucht!</h2>
   </div>
   <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
-    <table style="width:100%;border-collapse:collapse">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
       <tr><td style="padding:8px;color:#666;width:160px">Wareneingang</td><td style="padding:8px;font-weight:bold">#{incoming_num}</td></tr>
-      <tr><td style="padding:8px;color:#666">Bestellung</td><td style="padding:8px">{purchase_order_num}</td></tr>
+      <tr><td style="padding:8px;color:#666">Bestellung</td><td style="padding:8px;font-weight:bold">{purchase_order_num}</td></tr>
+      <tr><td style="padding:8px;color:#666">Lieferant</td><td style="padding:8px">{supplier_display}</td></tr>
+      <tr><td style="padding:8px;color:#666">Artikel</td><td style="padding:8px">{article_list}</td></tr>
       <tr><td style="padding:8px;color:#666">Lager</td><td style="padding:8px">{warehouse}</td></tr>
     </table>
-    <p style="color:#555;margin-top:16px">Die Ware wurde erfolgreich ins Lager gebucht. Der Vorgang ist abgeschlossen.</p>
+    <p style="color:#28a745;font-weight:bold;font-size:15px;margin:0">Der Vorgang ist vollständig abgeschlossen. ✅</p>
     <p style="color:#999;font-size:12px;text-align:center;margin-top:24px">Wareneingang App · NEXTWAVE GmbH</p>
   </div>
 </body></html>"""
