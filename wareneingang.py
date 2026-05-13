@@ -678,23 +678,28 @@ class Handler(BaseHTTPRequestHandler):
                             sn_list_webhook.append(bs.get("serialNumber",""))
 
                     subject = f"✅ Wareneingang {incoming_num} – Ware ist im Lager!"
-                    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-  <div style="background:#28a745;padding:20px;border-radius:8px 8px 0 0">
-    <h2 style="color:white;margin:0">✅ Ware erfolgreich eingebucht!</h2>
+                    td_label = "padding:12px 16px;color:#666;width:160px;border-bottom:1px solid #eee;font-size:14px"
+                    td_value = "padding:12px 16px;border-bottom:1px solid #eee;font-size:14px"
+                    td_value_bold = "padding:12px 16px;font-weight:bold;border-bottom:1px solid #eee;font-size:14px"
+                    html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f0f0f0;padding:20px">
+  <div style="background:#28a745;padding:24px 28px;border-radius:8px 8px 0 0">
+    <h2 style="color:white;margin:0;font-size:20px">✅ Ware erfolgreich eingebucht!</h2>
   </div>
-  <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-      <tr><td style="padding:10px 8px;color:#666;width:160px;border-bottom:1px solid #eee">Wareneingang</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">#{incoming_num}</td></tr>
-      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Bestellung</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">{purchase_order_num}</td></tr>
-      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Lieferant</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{supplier_display}</td></tr>
-      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Artikel</td><td style="padding:10px 8px;border-bottom:1px solid #eee">{article_list}</td></tr>
-      <tr><td style="padding:10px 8px;color:#666;border-bottom:1px solid #eee">Menge</td><td style="padding:10px 8px;font-weight:bold;border-bottom:1px solid #eee">{total_qty} Stk.</td></tr>
-      <tr><td style="padding:10px 8px;color:#666">Lager</td><td style="padding:10px 8px">{warehouse}</td></tr>
+  <div style="background:#ffffff;padding:0;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="{td_label}">Wareneingang</td><td style="{td_value_bold}">#{incoming_num}</td></tr>
+      <tr style="background:#fafafa"><td style="{td_label}">Bestellung</td><td style="{td_value_bold}">{purchase_order_num}</td></tr>
+      <tr><td style="{td_label}">Lieferant</td><td style="{td_value}">{supplier_display}</td></tr>
+      <tr style="background:#fafafa"><td style="{td_label}">Artikel</td><td style="{td_value}">{article_list}</td></tr>
+      <tr><td style="{td_label}">Menge</td><td style="{td_value_bold}">{total_qty} Stk.</td></tr>
+      <tr style="background:#fafafa"><td style="padding:12px 16px;color:#666;font-size:14px">Lager</td><td style="padding:12px 16px;font-size:14px">{warehouse}</td></tr>
     </table>
-    <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:12px 16px;margin-bottom:16px">
-      <p style="color:#155724;font-weight:bold;font-size:15px;margin:0">✅ Der Vorgang ist vollständig abgeschlossen.</p>
+    <div style="padding:20px 28px;border-top:1px solid #eee">
+      <div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:12px 16px">
+        <p style="color:#155724;font-weight:bold;font-size:14px;margin:0">✅ Der Vorgang ist vollständig abgeschlossen.</p>
+      </div>
+      <p style="color:#aaa;font-size:11px;text-align:center;margin-top:16px;margin-bottom:0">Wareneingang App · NEXTWAVE GmbH</p>
     </div>
-    <p style="color:#999;font-size:12px;text-align:center;margin-top:16px">Wareneingang App · NEXTWAVE GmbH</p>
   </div>
 </body></html>"""
                     self._send_email_direct(STUDENT_EMAIL, subject, html)
