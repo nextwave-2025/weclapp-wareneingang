@@ -335,18 +335,23 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen direkt aus igDetail.incomingGoodsItems
+      // Artikelnamen aus purchaseOrder Items (bereits geladen beim Öffnen)
+      // Das ist die zuverlässigste Quelle da selectedOrder._items beim Öffnen befüllt wird
       const articleNameParts = [];
-      for (const igItem of (igDetail.incomingGoodsItems || [])) {
-        if (igItem.articleId) {
+      const itemsForArticle = selectedOrder._items || [];
+      console.log('items for article:', itemsForArticle.length, JSON.stringify(itemsForArticle.map(i => ({id:i.id, artId:i.articleId, artNr:i.articleNumber}))));
+      for (const item of itemsForArticle) {
+        if (item.articleId) {
           try {
-            const art = await api(`article/id/${igItem.articleId}`);
-            const n = art.name || art.description || igItem.articleNumber || '';
-            if (n) articleNameParts.push(n);
-          } catch(e) { if (igItem.articleNumber) articleNameParts.push(igItem.articleNumber); }
+            const art = await api(`article/id/${item.articleId}`);
+            const n = art.name || art.description || '';
+            if (n && !articleNameParts.includes(n)) articleNameParts.push(n);
+          } catch(e) {}
         }
       }
-      const articleNames = articleNameParts.join(', ');
+      const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') :
+        itemsForArticle.map(i => i.articleNumber || '').filter(Boolean).join(', ');
+      console.log('articleNames result:', articleNames);
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
