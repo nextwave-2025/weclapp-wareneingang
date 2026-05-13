@@ -352,7 +352,8 @@ async function bookGoodsReceipt(){
       const articleNames = articleNameParts.length > 0 ? articleNameParts.join(', ') :
         itemsForArticle.map(i => i.articleNumber || '').filter(Boolean).join(', ');
       console.log('articleNames result:', articleNames);
-      await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
+      const totalQty = receiptItems.reduce((sum, i) => sum + i.quantity, 0);
+      await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}&qty=${totalQty}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
     }
@@ -754,6 +755,7 @@ class Handler(BaseHTTPRequestHandler):
         purchase_order_id = qs.get("purchaseOrderId", [""])[0]
         order_num         = qs.get("orderNum",         [""])[0]
         articles          = qs.get("articles",         [""])[0]
+        qty               = qs.get("qty",              ["0"])[0]
         supplier    = qs.get("supplier",   [""])[0]
         sns         = qs.get("sns",        [""])[0]
 
@@ -789,10 +791,11 @@ class Handler(BaseHTTPRequestHandler):
   </div>
   <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-radius:0 0 8px 8px">
     <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
-      <tr><td style="padding:8px;color:#666;width:140px">Bestellung</td><td style="padding:8px;font-weight:bold">{order_num}</td></tr>
-      <tr><td style="padding:8px;color:#666">Lieferant</td><td style="padding:8px">{supplier}</td></tr>
-      <tr><td style="padding:8px;color:#666">Artikel</td><td style="padding:8px;font-weight:500">{articles}</td></tr>
-      <tr><td style="padding:8px;color:#666">Wareneingang</td><td style="padding:8px">#{incoming_id}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666;width:140px">Bestellung</td><td style="padding:10px 8px;font-weight:bold">{order_num}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666">Lieferant</td><td style="padding:10px 8px">{supplier}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666">Artikel</td><td style="padding:10px 8px;font-weight:500">{articles}</td></tr>
+      <tr><td style="padding:10px 8px;color:#666">Menge</td><td style="padding:10px 8px;font-weight:bold">{qty} Stk.</td></tr>
+      <tr><td style="padding:10px 8px;color:#666">Wareneingang</td><td style="padding:10px 8px">#{incoming_id}</td></tr>
     </table>
     <div style="margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
