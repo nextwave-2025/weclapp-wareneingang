@@ -249,7 +249,7 @@ async function selectOrder(order) {
       try {
         const art = await api(`article/id/${item.articleId}`);
         desc = art.name || art.description || desc;
-        item._articleName = desc;  // Für E-Mail
+        item._articleName = desc;  // Für E-Mail - direkt auf das Objekt gesetzt
       } catch(e) {}
       const tr=document.createElement('tr');
       tr.innerHTML=`<td><div style="font-weight:600">${artNr}</div><div style="font-size:12px;color:#555;margin-top:2px;font-weight:500">${desc}</div></td><td style="text-align:center;font-weight:600;color:#185FA5">${out}</td><td><div class="sn-row"><input class="sn-input" id="sn-inp-${item.id}" placeholder="Seriennummer (Enter oder mehrere einfügen)" 
@@ -334,23 +334,12 @@ async function bookGoodsReceipt(){
         (serialNumbers[i.purchaseOrderItemId] || []).forEach(sn => allSNs.push(sn));
       });
       const snList = allSNs.join('\n');
-      // Artikelnamen aus _items holen - serialNumbers Key ist item.id
-      const relevantItems = (selectedOrder._items || []).filter(i => 
-        (serialNumbers[i.id] && serialNumbers[i.id].length > 0) ||
-        (serialNumbers[i.purchaseOrderItemId] && serialNumbers[i.purchaseOrderItemId].length > 0)
-      );
-      const articleNameParts = [];
-      for (const item of relevantItems) {
-        let name = item._articleName || '';
-        if (!name && item.articleId) {
-          try {
-            const art = await api(`article/id/${item.articleId}`);
-            name = art.name || art.description || item.articleNumber || '';
-          } catch(e) { name = item.articleNumber || ''; }
-        }
-        if (name) articleNameParts.push(name);
-      }
-      const articleNames = articleNameParts.join(', ');
+      // Artikelnamen direkt aus items - wurde beim Laden via article API gesetzt
+      const articleNames = items
+        .filter(i => serialNumbers[i.id] && serialNumbers[i.id].length > 0)
+        .map(i => i._articleName || i.articleNumber || '')
+        .filter(Boolean)
+        .join(', ');
       await fetch(`/send_email?incomingId=${incomingId}&purchaseOrderId=${selectedOrder.id}&orderNum=${encodeURIComponent(orderNum)}&supplier=${encodeURIComponent(supplierName)}&sns=${encodeURIComponent(snList)}&articles=${encodeURIComponent(articleNames)}`);
     } else {
       console.warn('Keine incomingGoods ID in Antwort:', JSON.stringify(result));
@@ -609,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
                     print(f"  API Fehler: {e}")
                     status = ""
 
-            if "incomingGoods" in entity_name and status == "FINISHED":
+            if "incomingGoods" in entity_name and status == "INCOMING_MOVED_INTO_STORE":
                 incoming_num = entity.get("incomingGoodsNumber", "")
                 purchase_order_num = entity.get("purchaseOrderNumber", "")
                 warehouse = entity.get("warehouseName", "Hauptlager")
