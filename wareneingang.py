@@ -19,7 +19,7 @@ API_KEY    = os.environ.get("WECLAPP_API_KEY", "3d4e814f-6d2f-4f55-983b-f804a96b
 PORT       = int(os.environ.get("PORT", 8080))
 
 # E-Mail Konfiguration
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "nextwavegmbh@gmail.com")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "sales@next-wave.tech")
 EMAIL_TO   = os.environ.get("EMAIL_TO",   "mustafa@next-wave.tech")
 EMAIL_SMTP = os.environ.get("EMAIL_SMTP", "smtp.gmail.com")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 465))
@@ -717,19 +717,21 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def _send_email_direct(self, to_email, subject, html_body):
-        """Sendet E-Mail via SendGrid"""
-        SENDGRID_KEY = os.environ.get("SENDGRID_API_KEY", "")
-        if not SENDGRID_KEY:
+        """Sendet E-Mail via Brevo (kostenlos, 300/Tag)"""
+        BREVO_KEY = os.environ.get("BREVO_API_KEY", "")
+        if not BREVO_KEY:
+            print("  BREVO_API_KEY fehlt")
             return
         payload = json.dumps({
-            "personalizations": [{"to": [{"email": to_email}]}],
-            "from": {"email": EMAIL_FROM},
+            "sender": {"email": EMAIL_FROM},
+            "to": [{"email": to_email}],
             "subject": subject,
-            "content": [{"type": "text/html", "value": html_body}]
+            "htmlContent": html_body
         }).encode("utf-8")
-        req = urllib.request.Request("https://api.sendgrid.com/v3/mail/send", data=payload, method="POST")
-        req.add_header("Authorization", f"Bearer {SENDGRID_KEY}")
+        req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=payload, method="POST")
+        req.add_header("api-key", BREVO_KEY)
         req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
         try:
             with urllib.request.urlopen(req) as r:
                 print(f"  E-Mail an {to_email} gesendet: {r.status}")
@@ -828,23 +830,24 @@ class Handler(BaseHTTPRequestHandler):
 </body></html>"""
 
         try:
-            # E-Mail via SendGrid API (HTTPS) - Railway-kompatibel
-            SENDGRID_KEY = os.environ.get("SENDGRID_API_KEY", "")
-            if SENDGRID_KEY:
-                sg_payload = json.dumps({
-                    "personalizations": [{"to": [{"email": EMAIL_TO}]}],
-                    "from": {"email": EMAIL_FROM},
+            # E-Mail via Brevo API (HTTPS) - Railway-kompatibel, kostenlos 300/Tag
+            BREVO_KEY = os.environ.get("BREVO_API_KEY", "")
+            if BREVO_KEY:
+                bv_payload = json.dumps({
+                    "sender": {"email": EMAIL_FROM},
+                    "to": [{"email": EMAIL_TO}],
                     "subject": subject,
-                    "content": [{"type": "text/html", "value": html_body}]
+                    "htmlContent": html_body
                 }).encode("utf-8")
-                sg_req = urllib.request.Request(
-                    "https://api.sendgrid.com/v3/mail/send",
-                    data=sg_payload, method="POST"
+                bv_req = urllib.request.Request(
+                    "https://api.brevo.com/v3/smtp/email",
+                    data=bv_payload, method="POST"
                 )
-                sg_req.add_header("Authorization", f"Bearer {SENDGRID_KEY}")
-                sg_req.add_header("Content-Type", "application/json")
-                with urllib.request.urlopen(sg_req) as sg_r:
-                    print(f"  E-Mail via SendGrid gesendet: {sg_r.status}")
+                bv_req.add_header("api-key", BREVO_KEY)
+                bv_req.add_header("Content-Type", "application/json")
+                bv_req.add_header("Accept", "application/json")
+                with urllib.request.urlopen(bv_req) as bv_r:
+                    print(f"  E-Mail via Brevo gesendet: {bv_r.status}")
             else:
                 # Fallback: SMTP
                 import smtplib, ssl
